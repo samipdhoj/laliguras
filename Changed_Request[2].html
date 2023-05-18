@@ -1,0 +1,1270 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>Popup and Highlight Route</title>
+  <link rel="stylesheet" href="https://js.arcgis.com/4.21/esri/themes/light/main.css" />
+  <script src="https://js.arcgis.com/4.21/"></script>
+
+  <link href="https://fonts.googleapis.com/css?family=Universe+Condensed" rel="stylesheet">
+
+
+  <!-- To replace with Panolens in future -->
+  <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css" />
+  <style>
+    #panorama {
+      width: 600px;
+      height: 400px;
+    }
+
+    #Buttons {
+      position: absolute;
+      top: 10px;
+      left: 80px;
+      /* background-color: white;
+      padding: 10px;
+      border-radius: 5px;
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.3); */
+      z-index: 1;
+      font-family: sans-serif;
+      font-weight: 200px;
+    }
+
+    .floatingDiv {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background-color: white;
+      border: 1px solid black;
+      padding: 20px;
+      z-index: 1;
+      display: none;
+    }
+
+    .floatingDiv.show {
+      display: block;
+    }
+
+    #floatingDiv {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background-color: white;
+      border: 1px solid black;
+      padding: 20px;
+      z-index: 1;
+      display: none;
+    }
+
+    #floatingDiv.show {
+      display: block;
+    }
+  </style>
+
+  <style>
+    html,
+    body,
+    #viewDiv {
+      padding: 0;
+      margin: 0;
+      height: 100%;
+      width: 100%;
+      position: relative;
+      z-index: 0;
+      outline: none;
+    }
+
+    #legDiv {
+      position: absolute;
+      top: 290px;
+      right: 0px;
+      background-color: white;
+      padding: 10px;
+      border-radius: 5px;
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+      z-index: 1;
+      font-family: sans-serif;
+    }
+
+
+    table button {
+      width: 300px;
+      /* Increase button width */
+      height: 30px;
+      background-color: rgb(0, 217, 255);
+      /* Change button background color */
+      border: none;
+      font-family: Arial, sans-serif;
+      font-size: 16px;
+      color: rgb(223, 97, 185);
+      text-align: left;
+
+    }
+
+    table td {
+      font-size: 14px;
+      font-family: Arial, sans-serif;
+      font-weight: bold;
+
+    }
+  </style>
+  <style>
+    table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+
+  th, td {
+    text-align: left;
+    padding: 8px;
+    border: 1px solid #000;
+  }
+
+  tr:nth-child(odd) {
+  background-color: #f2f2f2;
+}
+
+  tr:nth-child(even) {
+    background-color: #FFC0CB;
+  }
+</style>
+  <script src='database_get_elev.js'></script>
+  <script>
+    async function getData(url = '') {
+      const response = await fetch(url, {
+        method: 'GET'
+      });
+      return response.json();
+    }
+    let testVar = null;
+    var pathName = "Lukla-EBC"
+    var difficulty = "beginner";
+    var offset = 1.5;     // height of route from database points
+    var legNum = 0;     // used by routeOverlord to take each of the leg ids. has the total number of legs when all routes are drawn
+    var totalLegs = 0;  // Gives total number of legs beforehand
+
+    function vanillaReact(leg, pathName, difficulty, dist, up, down, dur) {
+      var distance = dist;
+      var Up = up;
+      var Down = down;
+      var duration = dur;
+      // console.log(Up)
+
+      let id;
+      let desc;
+      for (var i = 1; i <= legNum; i++) {
+        id = "leg" + i.toString() + "Detail";
+        if (document.getElementById(id)) document.getElementById(id).innerHTML = ""; // Replace with expanding function
+      }
+      id = "leg" + leg.toString() + "Detail";
+      var pathLocations = giveCoordinate("source_paths", pathName, difficulty);
+      // console.log(pathLocations)
+      // console.log(leg)
+      var place0 = pathLocations[leg - 1];
+      var place0elv = giveCoordinate("source_locations", pathLocations[leg - 1])[2];
+
+
+      var place1 = pathLocations[leg]
+      var place1elv = giveCoordinate("source_locations", pathLocations[leg])[2];
+
+
+      desc = "Start:&nbsp&nbsp&nbsp" + place0 + "&nbsp" + place0elv + "m" + "<br>End:&nbsp&nbsp&nbsp" + place1 + "&nbsp" + place1elv + "m" + "<br>Distance:&nbsp&nbsp" + distance + "&nbspkm" + "<br>Elevation:&nbsp&nbsp" + "up&nbsp" + up + "m" + "&nbsp" + "down&nbsp" + down + "m" + "<br>Duration:&nbsp&nbsp&nbsp" + duration + "hrs" + "<br>Staying@:&nbsp&nbsp&nbsp" + place1 + "&nbsplodge"
+
+
+      // Change according to data using database
+      if (document.getElementById(id)) document.getElementById(id).innerHTML = desc // Replace with expanding function
+    }
+
+    require([
+      "esri/config",
+      "esri/Map",
+      "esri/views/SceneView",
+      "esri/layers/ElevationLayer",
+      "esri/layers/ImageryLayer",
+      "esri/PopupTemplate",
+      "esri/widgets/Track",
+      "esri/Graphic",
+      "esri/layers/GraphicsLayer",
+      "esri/symbols/SimpleLineSymbol",
+      "esri/geometry/SpatialReference",
+      "esri/rest/route",
+      "esri/rest/support/RouteParameters",
+      "esri/rest/support/FeatureSet",
+      "esri/geometry/Point",
+      "esri/symbols/PictureMarkerSymbol",
+      "esri/geometry/Polyline",
+      "esri/symbols/SimpleMarkerSymbol",
+      "esri/symbols/SimpleLineSymbol",
+      "esri/symbols/TextSymbol",
+      "esri/widgets/ElevationProfile",
+      "esri/widgets/ElevationProfile/ElevationProfileViewModel",
+      "esri/layers/support/RasterFunction",
+      "esri/layers/GroupLayer"
+
+    ], function (
+      esriConfig
+      , Map
+      , SceneView
+      , ElevationLayer
+      , ImageryLayer
+      , PopupTemplate
+      , Track
+      , Graphic
+      , GraphicsLayer
+      , SimpleLineSymbol
+      , SpatialReference
+      , route
+      , RouteParameters
+      , FeatureSet
+      , Point
+      , PictureMarkerSymbol
+      , Polyline
+      , SimpleMarkerSymbol
+      , SimpleLineSymbol
+      , TextSymbol
+      , ElevationProfile
+      , ElevationProfileViewModel
+      , RasterFunction
+      , GroupLayer
+    ) {
+
+
+      var map = new Map({
+        basemap: "satellite",
+        ground: "world-elevation",
+        // maxScale: 100
+      });
+
+
+      var view = new SceneView({
+        container: "viewDiv",
+        map: map,
+        environment: {
+          colorCorrection: {
+            brightness: -100,
+            contrast: -100,
+            hue: 0
+          }
+        },
+        camera: {
+          position: {
+            x: 85.36206495348216,
+            y: 28.16079021373097,
+            z: 12000
+          },
+          tilt: 0.5,
+
+
+        },
+        constraints: {
+
+          tilt: {
+            max: 75
+          }
+        }
+      });
+
+
+      view.environment.colorCorrection = {
+        brightness: 100,
+        contrast: 0,
+        hue: 0
+      };
+      var track = new Track({
+        view: view,
+        graphic: new Graphic({
+          symbol: {
+            type: "simple-marker",
+            size: "12px",
+            color: "green",
+            outline: {
+              color: "#efefef",
+              width: "1.5px"
+            }
+          }
+        }),
+        useHeadingEnabled: false
+      });
+      view.ui.add(track, "top-left");
+
+
+
+      var profile = new ElevationProfile({
+        view: view,
+        profiles: [{
+          type: "ground",
+          color: "#7A9BCC",
+          width: 2,
+          unit: "feet"
+        }]
+      });
+
+      //elevation profile
+      //view.ui.add(profile, "bottom-left");
+
+
+      // create elevation layer
+      var profileTask = new ElevationProfile({
+        url: "https://elevation.arcgis.com/arcgis/rest/services/Tools/ElevationSync/GPServer",
+      });
+
+      profile.set("task", profileTask);
+
+      // create elevation layer
+      var elevationLayer = new ElevationLayer({
+        url: "https://elevation3d.arcgis.com/arcgis/rest/services/WorldElevation3D/Terrain3D/ImageServer",
+      });
+
+      const currentElevationInfo = {
+        mode: "relative-to-ground",
+        offset: 5
+      };
+
+      // Get longitude and latitude
+      view.on("click", function (event) {
+        // get the clicked point's coordinates
+        var point = event.mapPoint;
+        var longitude = point.longitude;
+        var latitude = point.latitude;
+        addButton(longitude, latitude);
+        // // query elevation at the clicked point
+        // elevationLayer.queryElevation(point)
+        //   .then(function(result) {
+        //     // get the elevation value from the result
+        //     var elevation = result.geometry.z;
+
+        //     // log the coordinates and elevation
+        console.log("Clicked point coordinates: ", latitude, longitude);
+        //     console.log("Elevation at clicked point: ", elevation);
+        //   })
+        //   .catch(function(error) {
+        //     console.error("Error querying elevation: ", error);
+        //   });
+      });
+
+
+      async function getData(url = '') {
+        const response = await fetch(url, {
+          method: 'GET'
+        });
+        return response.json();
+      }
+
+      function difficultyButtonMaster(difficulty) {
+        let diff = ['beginner', 'advanced', 'expert'];
+        diff.splice(diff.indexOf(difficulty), 1);
+        const difficultyBtn = document.getElementById(difficulty + "-btn");
+        difficultyBtn.addEventListener("click", () => {
+          // For turining off other difficulty routes
+          for (d of diff) {
+            console.log('Turning off layer', d + "RouteLayer")
+            if (map.findLayerById(d + "RouteLayer")) map.findLayerById(d + "RouteLayer").visible = false;
+          }
+          // For turining on required difficulty routes
+          difficultyBtn.style.backgroundColor = "red";
+          console.log('Turning on layer', difficulty + "RouteLayer");
+          map.findLayerById(difficulty + 'RouteLayer').visible = true;
+        });
+      }
+
+      function routeOverlord(pathName, difficulty) {
+        const url = 'http://16.16.75.224/route/' + pathName + '/difficulty/' + difficulty;
+        const myPromise = getData(url);
+        myPromise
+          .then((data) => {
+            testVar = data;
+
+            let groupLayerName = difficulty + "RouteLayer";
+            console.log(groupLayerName);
+            var groupLayer = new GroupLayer({
+              id: groupLayerName,
+              visible: (difficulty == "beginner") ? true : false
+            });
+            map.add(groupLayer);
+
+            difficultyButtonMaster(difficulty);
+
+            for (let i in data) {
+              if (data[i]) {
+                // console.log('before',data[i].length)
+                let startLocation = data[i].shift();
+                console.log('start', startLocation)
+                console.log('after', data[i].length)
+                console.log('total', data[i])
+                for (let x of data[i]) {
+                  if (isNaN(x[0])) console.log('not a number found', x[0]);
+                  if (isNaN(x[1])) console.log('not a number found', x[1]);
+                }
+                routeMaster(data[i], i, groupLayerName);
+                if (i == data.length - 1) {
+
+                  stand(startLocation[1], [data[i].at(-1)[0], data[i].at(-1)[1]])
+                }
+                else {
+                  stand(startLocation[0], [data[i][0][0], data[i][0][1]], groupLayerName);
+                }
+              }
+            }
+            // for(let i in data){
+
+            // }
+          })
+      }
+
+      function stand(from, coord, groupLayerId) {
+        var location = new Point({
+          x: coord[0],
+          y: coord[1],
+          spatialReference: { wkid: 4326 }
+        });
+
+        var lineSymbol = new SimpleLineSymbol({
+          color: [231, 84, 128],
+          haloColor: [255, 194, 255],
+          width: 2,
+          style: "solid"
+        });
+
+        var markerSymbol;
+
+        // Check if the village is the start or end village
+        if (from === "Start") {
+          markerSymbol = new PictureMarkerSymbol({
+            url: "https://raw.githubusercontent.com/Isha-Karn/SQL_Learning/master/Shoe.png",
+            height: 50,
+            width: 50,
+          });
+        }
+
+        elevationLayer.queryElevation(location).then((result) => {
+          if (result.geometry) {
+            location = result.geometry;
+            var graphics = [];
+
+            var markerGraphic = new Graphic({
+              geometry: {
+                type: "polyline",
+                paths: [[[location.x, location.y, 0], [location.x, location.y, 10]]]
+              },
+              symbol: markerSymbol
+            });
+            graphics.push(markerGraphic);
+
+            if (from !== "Start") {
+              var lineGraphic = new Graphic({
+                geometry: {
+                  type: "polyline",
+                  paths: [[[location.x, location.y, 0], [location.x, location.y, 100]]]
+                },
+                symbol: lineSymbol
+              });
+              graphics.push(lineGraphic);
+            }
+            var locationStand = LocationShower(location, from);
+            graphics.push(locationStand);
+            var groupLayer = map.findLayerById(groupLayerId);
+            if (groupLayer) {
+              var graphicsLayer = new GraphicsLayer({
+                graphics: graphics,
+                elevationInfo: currentElevationInfo
+              });
+              groupLayer.add(graphicsLayer);
+              map.add(groupLayer);
+            } else {
+              console.error("Group Layer not found in stand: ", groupLayerId);
+            }
+          }
+        });
+      }
+
+      function addViewPoint(location, name, image_url) {
+        // Create a point from the provided location
+        var point = new Point({
+          x: location[0],
+          y: location[1],
+          spatialReference: { wkid: 4326 }
+        });
+
+        // Create a picture marker symbol using the provided image URL
+        var markerSymbol = new PictureMarkerSymbol({
+          url: "https://raw.githubusercontent.com/Isha-Karn/SQL_Learning/master/View_point_icon.png",
+          height: 32,
+          width: 32,
+          minScale: 2000,
+          maxScale: 2500
+        });
+
+        // Create a popup template with the photo and viewpoint name
+        var popupTemplate = new PopupTemplate({
+          title: "{name}",
+          content: '<a href="{image}" target="_blank"><img src="{image}" width="400" height="250"></a>'
+        });
+
+        // Create a graphic with the point, marker symbol, and popup template
+        var graphic = new Graphic({
+          geometry: point,
+          symbol: markerSymbol,
+          attributes: {
+            name: name,
+            image: image_url,
+            elevation: 0 // you need to set the elevation value
+          },
+          popupTemplate: popupTemplate
+        });
+
+        // Add the graphic to the graphics layer
+        var graphicsLayer = new GraphicsLayer
+        graphicsLayer.elevationInfo = currentElevationInfo;
+        graphicsLayer.add(graphic);
+        map.add(graphicsLayer);
+
+        // Set the view to the provided location and zoom level
+        view.goTo({
+          target: point,
+
+        });
+      }
+
+      addViewPoint([85.56115600377703, 28.218051006003503], "GLA Lake", "https://raw.githubusercontent.com/Laliguras/lali-s3-temp/main/viewPoint/GLA_Lake_viewpoint.jpeg");
+      addViewPoint([85.57093487320884, 28.21773512253451], "Kyanjin Ri Lower Peak", "https://raw.githubusercontent.com/Laliguras/lali-s3-temp/main/viewPoint/Kyanjin_Ri_viewpoint.jpeg");
+
+
+      // function viewPointShower(location, name) {
+      //   let textSymbol = {
+      //     type: "text",
+      //     color: [231,84,128],
+      //     haloColor: [255, 194, 255],
+      //     haloSize: 1,
+      //     text: name,
+      //     font: {
+      //       size: 13,
+      //       family: "univers-condensed",
+      //       weight: "bold"
+      //     }
+      //   };
+
+      //   var point = new Point({
+      //     x: location[0],
+      //     y: location[1],
+      //     z: 120,
+      //     spatialReference: { wkid: 4326 }
+      //   });
+
+      //   let textGraphic = new Graphic({
+      //     geometry: point,
+      //     symbol: textSymbol
+      //   });
+
+      //   var graphicsLayer = new GraphicsLayer();
+      //   graphicsLayer.elevationInfo = currentElevationInfo;
+      //   graphicsLayer.add(textGraphic);
+      //   map.add(graphicsLayer);
+
+      //   return textGraphic;
+      // }
+
+      // viewPointShower([85.56115600377703,28.218051006003503], "GLA Lake");
+      // viewPointShower([85.57093487320884,28.21773512253451], "Kyanjin Ri Lower Peak");
+      // //viewPointShower([85.56679346159257, 28.212975893712795], "Kyangjin View point");
+
+
+      function routeMaster(routeCoords, legNum, groupLayerId) {
+
+        // for (var i = 0; i < routeCoords.length; i += 1) {
+        //   routeCoords[i][2] = 0;
+        // }
+
+        var route = new Polyline({
+          paths: [routeCoords],
+          spatialReference: {
+            wkid: 4326
+          }
+        });
+
+        profile.input = route;
+
+        var routeSymbol = new SimpleLineSymbol({
+          color: "#00008B",
+          width: 4
+        });
+
+
+        var routeGraphic = new Graphic({
+          geometry: route,
+          symbol: routeSymbol,
+        });
+        // console.log('searching gfroup layer')
+        var groupLayer = map.findLayerById(groupLayerId);
+        if (groupLayer) {
+          var graphicsLayer = new GraphicsLayer();
+          graphicsLayer.add(routeGraphic);
+          graphicsLayer.elevationInfo = currentElevationInfo;
+          groupLayer.add(graphicsLayer);
+          map.add(groupLayer);
+        }
+        else {
+          console.error('Group Layer not found in RouteMaster: ', groupLayerId);
+        }
+
+        var highlightSymbol = new SimpleLineSymbol({
+          color: "#1EA3F7",
+          width: 5
+        });
+
+
+        for (var i = 1; i <= totalLegs; i++) {
+          id = 'leg' + i.toString();
+          if (document.getElementById(id)) {
+            if (i === legNum) {
+              document.getElementById(id).addEventListener("click", function () {
+                routeGraphic.symbol = highlightSymbol;
+                graphicsLayer.refresh();
+              });
+            }
+            else {
+              document.getElementById(id).addEventListener("click", function () {
+                routeGraphic.symbol = routeSymbol;
+                graphicsLayer.refresh();
+              });
+            }
+          }
+        }
+
+        view.on("click", function (event) {
+          // map.findLayerById('beginnerRouteLayer').visible = false;
+          // map.findLayerById('advancedRouteLayer').visible = false;
+          // map.findLayerById('expertRouteLayer').visible = false;
+          view.hitTest(event).then(function (response) {
+            if (response.results[0] != undefined && response.results[0] != null && Object.hasOwn(response.results[0], 'graphic')) {
+              var feature = response.results[0].graphic;
+              if (feature === routeGraphic) {
+                if (document.getElementById('leg' + legNum.toString())) document.getElementById('leg' + legNum.toString()).click();
+                feature.symbol = highlightSymbol;
+                // graphicsLayer.refresh();
+              } else {
+                routeGraphic.symbol = routeSymbol;
+                // graphicsLayer.refresh();
+              }
+            }
+          });
+        });
+
+
+      }
+
+      function pathMaster(pathName, difficulty) {
+        var locations = giveCoordinate("source_paths", pathName, difficulty)
+        locations.forEach(location => {
+          stand(location, 10);
+          LocationShower(location, 100);
+        });
+
+      }
+
+      function stand_v0_5(placeName, elevation) {
+        const url = 'http://16.16.75.224/hotels/langtang/coordinates';
+        const myPromise = getData(url);
+        myPromise
+          .then((data) => {
+            // testVar = data;
+            for (let i in data) {
+              console.log(i)
+            }
+          })
+      }
+
+      function userStoryTeller() {
+        const url = 'http://16.16.75.224/userStory/langtang/tour_title';
+        const myPromise = getData(url);
+        myPromise
+          .then((data) => {
+            console.log('inside user story data')
+            const tourName = data.tourName;
+            const difficulty = data.difficulty;
+            const title = data.title;
+            const description = data.description;
+            for (let story of data.stories) {
+              const imageStory = story.image;
+              console.log(imageStory);
+              //   urlArray = datum.images;
+              //   console.log(datum);
+              var storyLocation = new Point({
+                x: story.coordinates[0],
+                y: story.coordinates[1],
+                z: 10,
+                spatialReference: { wkid: 4326 }
+              });
+
+              //   // for image management
+              //   let sceneArray = [];
+              //   for (let i in datum.images) {
+              //     scene = {
+              //       "title": datum.hotelCode + "_image_" + i.toString(),
+              //       "type": "equirectangular",
+              //       "panorama": datum.images[i],
+              //     }
+              //     sceneArray.push(scene);
+              //   }
+              //   scenes[datum.hotelCode] = sceneArray;
+
+              var storyMarkerSymbol = new PictureMarkerSymbol({
+                url: "https://as2.ftcdn.net/v2/jpg/01/27/07/93/1000_F_127079390_l1Y8xEoPfnjwKytbyuMX1tPd6RleGjqs.jpg",
+                height: 48,
+                width: 48,
+                minScale: 2000,
+                maxScale: 2500
+              });
+
+              //   const hotelDetailAction = {
+              //     title: "View Details",
+              //     id: datum.hotelCode + "-hotel-details",
+              //     image: "https://raw.githubusercontent.com/Isha-Karn/SQL_Learning/master/Hotel_designed.png",
+              //     execute: function (id) {
+              //       showHotelInfo(id);
+              //     }
+              //   };
+
+              //   function showHotelInfo(hotelId) {
+              //     const url = 'http://localhost:3001/hotels/langtang/' + hotelId;
+              //     const myPromise = getData(url);
+              //     // console.log('url for hotel ', url);
+              //     viewHotelDetails();
+              //     myPromise
+              //       .then((data) => {
+              //         // testVar = data;
+              //         // console.log("from showHotelInfo",data)
+              //         viewHotelDetails(data);
+              //       })
+              //   }
+
+              //   const hotelImageAction = {
+              //     title: "View 360 images",
+              //     id: datum.hotelCode + "-hotel-images",
+              //     image: "https://raw.githubusercontent.com/Isha-Karn/SQL_Learning/master/Hotel_designed.png",
+              //     execute: function (id) {
+              //       document.getElementById("floatingDiv").classList.add("show");
+              //       // console.log("finael", scenes);
+              //       console.log('passed id ', id);
+              //       panoramaViewer(scenes[id]);
+              //       console.log('passing', datum.hotelCode, scenes[datum.hotelCode]);
+              //       return Object.keys(scenes[id]).length;
+              //     }
+              //   };
+
+              let mediaInfos = []
+              for (singleImage of imageStory) {
+                mediaInfos.push({
+                  type: "image",
+                  value: {
+                    sourceURL: singleImage.imageURL
+                  },
+                  caption: singleImage.imageCaption,
+                  title: singleImage.imageTitle,
+                })
+              }
+              console.log(mediaInfos);
+              let popupTemplate = {
+                // autocasts as new PopupTemplate()
+                title: "{name}",
+                content: [
+                  {
+                    type: "text",
+                    text: "{description}"
+                  },
+                  {
+                    type: "media",
+                    mediaInfos: mediaInfos,
+                    click: function (event) {
+                      // console.log('sdfs')
+                    }
+                  }
+                ],
+                // actions: [hotelDetailAction, hotelImageAction]
+              };
+
+              //   // On popUp button click
+              //   view.popup.on("trigger-action", (event) => {
+              //     console.log(event.action.id);
+              //     let id = event.action.id;
+              //     if (id.includes("-hotel-details")) {
+              //       hotelDetailAction.execute(id.replace("-hotel-details", ""));
+              //     }
+              //     if (id.includes("-hotel-images")) {
+              //       console.log('in image');
+              //       totalNoOfImages = hotelImageAction.execute(id.replace("-hotel-images", ""));
+              //       console.log(totalNoOfImages);
+              //     }
+              //   });
+
+              var storyMarkerGraphic = new Graphic({
+                geometry: storyLocation,
+                symbol: storyMarkerSymbol,
+                attributes: {
+                  name: story.title,
+                  description: story.description,
+                  imageURL: story.imageUrl,
+                },
+                popupTemplate: popupTemplate
+              });
+
+              var graphicsLayer = new GraphicsLayer();
+              graphicsLayer.add(storyMarkerGraphic);
+              graphicsLayer.elevationInfo = currentElevationInfo;
+              map.add(graphicsLayer);
+              //   // view.graphics.add(graphicsLayer);
+            }
+
+            // console.log("Sabbai scenes haru", scenes);
+
+          })
+
+      }
+
+      function hotelIcon() {
+        const url = 'http://16.16.75.224/hotels/langtang';
+        const myPromise = getData(url);
+        let scenes = {};
+        myPromise
+          .then((data) => {
+            // testVar = data;
+            let scene = {};
+            for (let datum of data) {
+              urlArray = datum.images;
+              // console.log(datum);
+              var location = new Point({
+                x: datum.coordinates[0],
+                y: datum.coordinates[1],
+                z: 10,
+                spatialReference: { wkid: 4326 }
+              });
+
+              // for image management
+              let sceneArray = [];
+              for (let i in datum.images) {
+                scene = {
+                  "title": datum.hotelCode + "_image_" + i.toString(),
+                  "type": "equirectangular",
+                  "panorama": datum.images[i],
+                }
+                sceneArray.push(scene);
+              }
+              scenes[datum.hotelCode] = sceneArray;
+
+              var markerSymbol = new PictureMarkerSymbol({
+                url: "https://raw.githubusercontent.com/Isha-Karn/SQL_Learning/master/Hotel_icon_pink.png",
+                height: 24,
+                width: 24,
+                minScale: 2000,
+                maxScale: 2500
+              });
+
+              const hotelDetailAction = {
+                title: "View Details",
+                id: datum.hotelCode + "-hotel-details",
+                image: "https://raw.githubusercontent.com/Isha-Karn/SQL_Learning/master/Hotel_designed.png",
+                execute: function (id) {
+                  showHotelInfo(id);
+                }
+              };
+
+              function showHotelInfo(hotelId) {
+                const url = 'http://16.16.75.224/hotels/langtang/' + hotelId;
+                const myPromise = getData(url);
+                // console.log('url for hotel ', url);
+                viewHotelDetails();
+                myPromise
+                  .then((data) => {
+                    // testVar = data;
+                    console.log("from showHotelInfo", data)
+                    viewHotelDetails(data);
+                  })
+              }
+
+              const hotelImageAction = {
+                title: "View 360 images",
+                id: datum.hotelCode + "-hotel-images",
+                image: "https://raw.githubusercontent.com/Isha-Karn/SQL_Learning/master/Hotel_designed.png",
+                execute: function (id) {
+                  document.getElementById("floatingDiv").classList.add("show");
+                  // console.log("finael", scenes);
+                  // console.log('passed id ', id);
+                  panoramaViewer(scenes[id]);
+                  // console.log('passing', datum.hotelCode, scenes[datum.hotelCode]);
+                  return Object.keys(scenes[id]).length;
+                }
+              };
+
+              const popupTemplate = {
+                // autocasts as new PopupTemplate()
+                title: "{name}",
+                content: [
+                  {
+                    type: "fields",
+                    fieldInfos: [
+                      
+                      {
+                        fieldName: "elevation",
+                        label: "Elevation"
+                      },
+                      {
+                        fieldName: "contactPerson",
+                        label: "Contact Person"
+                      },
+                      {
+                        fieldName: "contactNumber",
+                        label: "Contact Number"
+                      }
+                    ]
+                    
+                  },
+                  
+                ],
+                actions: [hotelDetailAction, hotelImageAction]
+              };
+
+              // On popUp button click
+              view.popup.on("trigger-action", (event) => {
+                // console.log(event.action.id);
+                let id = event.action.id;
+                if (id.includes("-hotel-details")) {
+                  hotelDetailAction.execute(id.replace("-hotel-details", ""));
+                }
+                if (id.includes("-hotel-images")) {
+                  // console.log('in image');
+                  totalNoOfImages = hotelImageAction.execute(id.replace("-hotel-images", ""));
+                  // console.log(totalNoOfImages);
+                }
+              });
+
+              var markerGraphic = new Graphic({
+                geometry: location,
+                symbol: markerSymbol,
+                attributes: {
+                  name: datum.name,
+                  elevation: 5000,
+                  contactNumber: (datum.contactNumber.toString()).replaceAll(',', ' '),
+                  contactPerson: datum.contactPerson,
+                  rating: datum.rating,
+                  description: datum.description,
+                },
+                popupTemplate: popupTemplate
+              });
+
+              var graphicsLayer = new GraphicsLayer();
+              graphicsLayer.add(markerGraphic);
+              graphicsLayer.elevationInfo = currentElevationInfo;
+              map.add(graphicsLayer);
+              // view.graphics.add(graphicsLayer);
+            }
+
+            // console.log("Sabbai scenes haru", scenes);
+
+          })
+
+      }
+
+      function LocationShower(location, from) {
+        if (from === "Start") {
+          return null;
+        }
+
+        // let z = 300;
+        // let color = [231, 84, 128];
+        // let size = 10;
+        // if (from === "Kyangjin") {
+        //   z = 140;
+        //   color = "#FFA500" 
+        //   size = 14;
+        // }
+
+
+        let textSymbol = {
+          type: "text",
+          color: [231, 84, 128],
+          haloColor: [255, 194, 255],
+          haloSize: 1,
+          //color: "#FFFFFF",
+          text: from,
+          xoffset: 0,
+          yoffset: 0,
+          zoffset: 0,
+          font: {
+            size: 13,
+            family: "Universe Condensed",
+            weight: "bold"
+          }
+        };
+
+        let coord = new Point({
+          x: location.x,
+          y: location.y,
+          z: 105,
+          spatialReference: { wkid: 4326 }
+        });
+
+        let textGraphic = new Graphic({
+          geometry: coord,
+          symbol: textSymbol
+        });
+
+        return textGraphic;
+      }
+
+
+      view.when(function (event) {
+        routeOverlord("langtang", 'beginner');
+        routeOverlord("langtang", 'advanced');
+        routeOverlord("langtang", 'expert');
+      });
+
+      // function viewHotelDetails(info) {
+      //   document.getElementById("hotelDetailText").innerHTML = '';
+      //   if (info) {
+      //     document.getElementById("hotelDetailText").innerHTML =`
+      //     Contact Person: ${(info.contactPerson)}<br> 
+      //     wifi: ${(info.facilities.wifi == "x")?"Yes":"No"}<br>
+      //     bedsheetCleaning:${(info.facilities.bedsheetCleaning == "D")? "Daily":(info.facilities.bedsheetCleaning == "W3")? "within 3 days": (info.facilities.bedsheetCleaning == "W7")? "within 7 days":"more than 7 days"}<br>
+      //     electricity:${(info.facilities.electricity == "x")?"Yes":"No"}<br>
+      //     hotShower:${(info.facilities.hotShower == "x")?"Yes":"No"}<br>
+      //     mobilePay:${(info.facilities.mobilePay == "x")?"Yes":"No"}<br>
+      //     roomInsulation:${(info.facilities.roomInsulation== "B")? "Basic": (info.facilities.washingMethod == "M")? "Moderate":"Productive"}<br>
+      //     towel:${(info.facilities.towel == "x")?"Yes":"No"}<br>
+      //     washingMethod:${(info.facilities.washingMethod == "H")? "Hand wash":"Machine wash"}<br>
+
+      //     `;
+      //   }
+      //   document.getElementById("hotelDetails").classList.add("show");
+
+      // }
+
+
+
+
+      function viewHotelDetails(info) {
+        document.getElementById("hotelDetailText").innerHTML = "";
+        if (info) {
+          document.getElementById("hotelDetailText").innerHTML = `
+
+      
+      <table>
+        <tr>
+          <td>Contact Person:</td>
+          <td>${info.contactPerson}</td>
+        </tr>
+        <tr>
+          <td>wifi:</td>
+          <td>${(info.facilities.wifi == "x") ? "Yes" : "No"}</td>
+        </tr>
+        <tr>
+          <td>bedsheetCleaning:</td>
+          <td>${(info.facilities.bedsheetCleaning == "D") ? "Daily" :
+              (info.facilities.bedsheetCleaning == "W3") ? "within 3 days" :
+                (info.facilities.bedsheetCleaning == "W7") ? "within 7 days" :
+                  "more than 7 days"}</td>
+        </tr>
+        <tr>
+          <td>electricity:</td>
+          <td>${(info.facilities.electricity == "x") ? "Yes" : "No"}</td>
+        </tr>
+        <tr>
+          <td>hotShower:</td>
+          <td>${(info.facilities.hotShower == "x") ? "Yes" : "No"}</td>
+        </tr>
+        <tr>
+          <td>mobilePay:</td>
+          <td>${(info.facilities.mobilePay == "x") ? "Yes" : "No"}</td>
+        </tr>
+        <tr>
+          <td>roomInsulation:</td>
+          <td>${(info.facilities.roomInsulation == "B") ? "Basic" :
+              (info.facilities.washingMethod == "M") ? "Moderate" :
+                "Productive"}</td>
+        </tr>
+        <tr>
+          <td>towel:</td>
+          <td>${(info.facilities.towel == "x") ? "Yes" : "No"}</td>
+        </tr>
+        <tr>
+          <td>washingMethod:</td>
+          <td>${(info.facilities.washingMethod == "H") ? "Hand wash" : "Machine wash"}</td>
+        </tr>
+      </table>
+    `;
+        }
+        document.getElementById("hotelDetails").classList.add("show");
+      }
+
+
+      // function viewHotelImages() {
+      //   // panoramaViewer(urlArray);
+      //   document.getElementById("floatingDiv").classList.add("show");
+      // }
+
+      setTimeout(function () {
+        // userStoryTeller();
+        hotelIcon()
+      }, 3000);
+
+      window.addEventListener("load", function () {
+        var buttons = document.querySelectorAll("table button");
+        var lastClickedButton = null;
+
+        buttons.forEach(function (button) {
+          button.addEventListener("click", function () {
+            if (lastClickedButton !== null) {
+              lastClickedButton.classList.remove("clicked");
+            }
+
+            this.classList.add("clicked");
+            lastClickedButton = this;
+
+            buttons.forEach(function (button) {
+              if (button !== this) {
+                button.style.backgroundColor = "#89CFF0";
+              }
+            }, this);
+
+            this.style.backgroundColor = "#001f3f";
+          });
+
+        });
+      });
+    });
+
+
+  </script>
+</head>
+
+<body>
+  <style>
+    .container {
+      display: flex;
+      flex-direction: row;
+      height: 100vh;
+      /* set height to fill entire viewport */
+    }
+
+    .left {
+      flex: 7;
+      /* take up 70% of container height */
+      background-color: #ccc;
+    }
+
+    .right {
+      flex: 3;
+      /* take up 20% of container height */
+      background-color: #ddd;
+    }
+
+    #right {
+      display: none
+    }
+  </style>
+  <div class="container">
+    <div id="viewDiv" class="left"></div>
+    <div class="right" id="right">
+
+      <div id="storyUI">
+        <H1>User Story</H1>
+        <div id="storyMenu">
+          <button id="addLocation" onclick="locationGetter = true;">Add Point</button><br>
+          <div id="locationContainer"></div><br>
+
+        </div>
+        <h2>Title</h2>
+        <input id="storyTitle" type="text"></input>
+        <h2>Description</h2>
+        <textarea name="storyDesc" id="storyDesc" cols="50" rows="10"></textarea>
+      </div>
+    </div>
+  </div>
+  <script>
+    // User Story Scripts
+    let locationGetter = false;
+    function addButton(longitude, latitude) {
+      if (locationGetter && longitude && latitude) {
+        const newButton = document.createElement('button');
+        newButton.innerHTML = `Longitude: ${longitude}, Latitude: ${latitude}`;
+
+        const buttonsContainer = document.getElementById('locationContainer');
+        buttonsContainer.appendChild(newButton);
+        buttonsContainer.appendChild(document.createElement("br"));
+        locationGetter = false;
+      }
+    }
+
+    // add event listener to the button
+
+  </script>
+
+  <div id='elevationHaru'>
+  </div>
+
+  <div id="floatingDiv" name='360imageshower'>
+    <button id="closeButton" style="float: right"
+      onclick='document.getElementById("floatingDiv").classList.remove("show")'>Close</button>
+    <button id="nextImage" onclick='index = (index+1) % totalNoOfImages; pv.loadScene(index);'>Next</button>
+    <button id="previousImage"
+      onclick='index = Math.abs((index-1) % totalNoOfImages); pv.loadScene(index)'>Previous</button>
+  </div>
+  <div id="hotelDetails" name='hotelDetails' class="floatingDiv">
+    <button id="closeButton" style="float: right"
+      onclick='document.getElementById("hotelDetails").classList.remove("show")'>Close</button>
+    <div id="hotelDetailText"></div>
+  </div>
+
+
+  <script>
+    // Script for panorama
+    let urlArray = [];
+    let imgIndex = 0;
+    let pv = null;
+    let totalNoOfImages = 0;
+    let index = 0;
+    function panoramaViewer(scenes) {
+      pv = pannellum.viewer('floatingDiv', {
+        "autoLoad": true,
+        "default": {
+          "firstScene": 0,
+          "author": "Ishan Shrestha",
+          "sceneFadeDuration": 1000
+        },
+
+        "scenes": scenes
+      });
+      pv.loadScene(0);
+    }
+
+    // panoramaViewer("https://raw.githubusercontent.com/Isha-Karn/SQL_Learning/master/Lama_hotel_front.jpeg");
+  </script>
+
+
+  <div id="Buttons">
+    <!-- <button id = 'delete' >Delete</button> -->
+    <button id='beginner-btn'>Beginner</button>
+    <button id='advanced-btn'>Advanced</button>
+    <button id='expert-btn'>Expert</button>
+    <!-- <button id='showStoryBtn'>showStoryBtn</button> -->
+    <!-- <script>
+      const showStoryBtn = document.getElementById('showStoryBtn');
+      const storyUI = document.getElementById('right');
+      showStoryBtn.addEventListener('click', function () {
+        console.log("gjgkjgkhg")
+        if (storyUI.style.display === 'none') {
+          storyUI.style.display = 'block';
+        } else {
+          storyUI.style.display = 'none';
+        }
+      });
+    </script> -->
+
+  </div>
+
+</body>
+
+</html>
